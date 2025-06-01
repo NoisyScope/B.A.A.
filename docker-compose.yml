@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  web:
+    build: ./app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./app:/app
+      - ./logs:/app/logs # Add this line for Flask app's persistent logs
+    # No depends_on for web, it's a base service
+
+  selenium: # This is the Selenium Grid/Standalone server
+    build: ./selenium_driver # This Dockerfile uses selenium/standalone-chrome
+    ports:
+      - "4444:4444"
+    volumes:
+      - ./logs:/tmp/logs # Logs from selenium server itself, if any. /dev/shm usage is also common.
+      - /dev/shm:/dev/shm # Recommended for Chrome stability in Docker
+
+  selenium-runner: # This service runs our driver.py script
+    build:
+      context: .
+      dockerfile: ./selenium_runner/Dockerfile
+    ports:
+      - "5001:5001" # Expose port for the new Flask API in selenium-runner
+    volumes:
+      - ./selenium_driver:/app # Mounts driver.py and its requirements.txt
+      - ./logs:/app/logs     # Mounts the logs directory for output from driver.py
+    depends_on:
+      web:
+        condition: service_started
+      selenium:
+        condition: service_healthy
+    healthcheck: # Added healthcheck for the selenium-runner API
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # Give it time for Flask to start, especially with Selenium init
+
+networks:
+  default:
+    driver: bridge
